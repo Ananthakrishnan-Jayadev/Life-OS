@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary: #1a1816;
+  --bg-secondary: #242120;
+  --bg-tertiary: #2e2a28;
+  --bg-input: #362f2d;
+  --border: #3d3633;
+  --border-hover: #564e4a;
+
+  --text-primary: #e8e0d8;
+  --text-secondary: #a89e94;
+  --text-tertiary: #6e6259;
+
+  --accent-sage: #7c9a72;
+  --accent-amber: #c4973b;
+  --accent-rose: #b56b6b;
+  --accent-slate: #6b8a9e;
+  --accent-cream: #d4c5a9;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'DM Sans', sans-serif;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+}
+
+/* Staggered fade-in for children */
+.stagger-fade > * {
+  opacity: 0;
+  animation: fade-in 0.4s ease-out forwards;
+}
+.stagger-fade > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-fade > *:nth-child(2) { animation-delay: 80ms; }
+.stagger-fade > *:nth-child(3) { animation-delay: 160ms; }
+.stagger-fade > *:nth-child(4) { animation-delay: 240ms; }
+.stagger-fade > *:nth-child(5) { animation-delay: 320ms; }
+.stagger-fade > *:nth-child(6) { animation-delay: 400ms; }
+.stagger-fade > *:nth-child(7) { animation-delay: 480ms; }
+.stagger-fade > *:nth-child(8) { animation-delay: 560ms; }
+
+@keyframes fade-in {
+  0% { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in-left {
+  0% { opacity: 0; transform: translateX(-12px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+/* Number counter animation */
+@keyframes count-pulse {
+  0% { opacity: 0.5; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Page transition */
+.page-enter {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
