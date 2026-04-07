@@ -3,8 +3,9 @@ import { NavLink } from 'react-router-dom';
 import { clsx } from 'clsx';
 import {
   LayoutDashboard, Dumbbell, Ruler, BookOpen, DollarSign,
-  Briefcase, Flame, Inbox, ChevronLeft, ChevronRight,
+  Briefcase, Flame, Inbox, ChevronLeft, ChevronRight, LogOut,
 } from 'lucide-react';
+import { useAuthStore } from '../../store/authStore';
 
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -19,6 +20,7 @@ const navItems = [
 
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
+  const { user, signOut } = useAuthStore();
 
   return (
     <>
@@ -68,6 +70,25 @@ export default function Sidebar() {
             </NavLink>
           ))}
         </nav>
+
+        {user && (
+          <div className="border-t border-border px-4 py-3">
+            {!collapsed && (
+              <p className="text-xs text-text-tertiary truncate mb-2">{user.email}</p>
+            )}
+            <button
+              onClick={signOut}
+              className={clsx(
+                'flex items-center gap-3 w-full py-2 text-sm text-text-secondary',
+                'hover:text-text-primary hover:bg-bg-tertiary transition-colors rounded',
+                collapsed ? 'justify-center px-0' : 'px-2'
+              )}
+            >
+              <LogOut className="w-4 h-4 shrink-0" />
+              {!collapsed && <span>Sign Out</span>}
+            </button>
+          </div>
+        )}
       </aside>
 
       {/* Mobile Bottom Tab Bar */}

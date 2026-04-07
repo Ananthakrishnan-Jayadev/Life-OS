@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, Tooltip, CartesianGrid, Legend,
@@ -14,47 +14,40 @@ import ProgressBar from '../components/ui/ProgressBar';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../components/ui/Table';
 import ChartWrapper from '../components/charts/ChartWrapper';
 import { chartColors, commonAxisProps, commonTooltipStyle } from '../components/charts/chartTheme';
-import { incomeCategories, expenseCategories, budgetTargets, getMonthlyTotals } from '../data/budget';
+import { incomeCategories, expenseCategories } from '../data/budget';
 import { formatCurrency, formatShortDate } from '../lib/utils';
-import useStore from '../store/useStore';
+import useBudget from '../hooks/useBudget';
 
 const PIE_COLORS = [chartColors.sage, chartColors.amber, chartColors.rose, chartColors.slate, chartColors.cream,
   '#8b7355', '#5a7a5a', '#9e6b6b', '#6b7a8a', '#b5a58a'];
 
 export default function Budget() {
-  const { transactions, addTransaction } = useStore();
-  const [year, setYear] = useState(2026);
-  const [month, setMonth] = useState(3);
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+
+  const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+  const { transactions, targets, monthlyTotals, loading, error, create, remove } = useBudget(monthStr);
+
   const [filterCategory, setFilterCategory] = useState('');
   const [filterType, setFilterType] = useState('');
   const [sortBy, setSortBy] = useState('date');
   const [sortDir, setSortDir] = useState('desc');
   const [showTargets, setShowTargets] = useState(false);
-
-  // New transaction form
   const [newTxn, setNewTxn] = useState({ date: '', amount: '', category: '', type: 'expense', description: '' });
+  const [saving, setSaving] = useState(false);
 
-  const prefix = `${year}-${String(month).padStart(2, '0')}`;
-  const monthTxns = transactions.filter(t => t.date.startsWith(prefix));
-  const income = monthTxns.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-  const expenses = monthTxns.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const expenses = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   const net = income - expenses;
   const savingsRate = income > 0 ? Math.round((net / income) * 100) : 0;
-
   const monthName = new Date(year, month - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-  const prevMonth = () => {
-    if (month === 1) { setMonth(12); setYear(year - 1); }
-    else setMonth(month - 1);
-  };
-  const nextMonth = () => {
-    if (month === 12) { setMonth(1); setYear(year + 1); }
-    else setMonth(month + 1);
-  };
+  const prevMonth = () => { if (month === 1) { setMonth(12); setYear(year - 1); } else setMonth(month - 1); };
+  const nextMonth = () => { if (month === 12) { setMonth(1); setYear(year + 1); } else setMonth(month + 1); };
 
-  // Filtered + sorted transactions
   const displayed = useMemo(() => {
-    let list = [...monthTxns];
+    let list = [...transactions];
     if (filterCategory) list = list.filter(t => t.category === filterCategory);
     if (filterType) list = list.filter(t => t.type === filterType);
     list.sort((a, b) => {
@@ -64,69 +57,53 @@ export default function Budget() {
       return mul * (a[sortBy] || '').localeCompare(b[sortBy] || '');
     });
     return list;
-  }, [monthTxns, filterCategory, filterType, sortBy, sortDir]);
+  }, [transactions, filterCategory, filterType, sortBy, sortDir]);
 
-  // Running balance
   let runningBalance = 0;
   const displayedWithBalance = displayed.map(t => {
     runningBalance += t.type === 'income' ? t.amount : -t.amount;
     return { ...t, balance: runningBalance };
   });
 
-  // Donut: spending by category
   const categorySpending = useMemo(() => {
     const map = {};
-    monthTxns.filter(t => t.type === 'expense').forEach(t => {
-      map[t.category] = (map[t.category] || 0) + t.amount;
-    });
+    transactions.filter(t => t.type === 'expense').forEach(t => { map[t.category] = (map[t.category] || 0) + t.amount; });
     return Object.entries(map).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-  }, [monthTxns]);
+  }, [transactions]);
 
-  // 6-month bar chart
   const sixMonthData = useMemo(() => {
     const data = [];
     for (let i = 5; i >= 0; i--) {
       let m = month - i, y = year;
       if (m <= 0) { m += 12; y--; }
-      const totals = getMonthlyTotals(y, m);
-      data.push({
-        month: new Date(y, m - 1).toLocaleDateString('en-US', { month: 'short' }),
-        income: totals.income,
-        expenses: totals.expenses,
-      });
+      const key = `${y}-${String(m).padStart(2, '0')}`;
+      const found = monthlyTotals.find(t => t.month === key);
+      data.push({ month: new Date(y, m - 1).toLocaleDateString('en-US', { month: 'short' }), income: found?.income || 0, expenses: found?.expense || 0 });
     }
     return data;
-  }, [year, month]);
+  }, [monthlyTotals, year, month]);
 
-  // Daily cumulative spending
   const dailyCumulative = useMemo(() => {
-    const expTxns = monthTxns.filter(t => t.type === 'expense').sort((a, b) => a.date.localeCompare(b.date));
-    const totalBudget = Object.values(budgetTargets).reduce((s, v) => s + v, 0);
+    const expTxns = transactions.filter(t => t.type === 'expense').sort((a, b) => a.date.localeCompare(b.date));
+    const totalBudget = targets.reduce((s, t) => s + (t.amount || 0), 0);
     const daysInMonth = new Date(year, month, 0).getDate();
-    const data = [];
     let cum = 0;
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateStr = `${prefix}-${String(d).padStart(2, '0')}`;
+    return Array.from({ length: daysInMonth }, (_, idx) => {
+      const d = idx + 1;
+      const dateStr = `${monthStr}-${String(d).padStart(2, '0')}`;
       expTxns.filter(t => t.date === dateStr).forEach(t => cum += t.amount);
-      data.push({
-        day: d,
-        spent: cum,
-        target: Math.round((totalBudget / daysInMonth) * d),
-      });
-    }
-    return data;
-  }, [monthTxns, year, month]);
-
-  const handleAddTxn = () => {
-    if (!newTxn.amount || !newTxn.category) return;
-    addTransaction({
-      date: newTxn.date || new Date().toISOString().split('T')[0],
-      amount: parseFloat(newTxn.amount),
-      category: newTxn.category,
-      type: newTxn.type,
-      description: newTxn.description,
+      return { day: d, spent: cum, target: Math.round((totalBudget / daysInMonth) * d) };
     });
-    setNewTxn({ date: '', amount: '', category: '', type: 'expense', description: '' });
+  }, [transactions, targets, year, month, monthStr]);
+
+  const handleAddTxn = async () => {
+    if (!newTxn.amount || !newTxn.category) return;
+    setSaving(true);
+    try {
+      await create({ date: newTxn.date || new Date().toISOString().split('T')[0], amount: parseFloat(newTxn.amount), category: newTxn.category, type: newTxn.type, description: newTxn.description });
+      setNewTxn({ date: '', amount: '', category: '', type: 'expense', description: '' });
+    } catch (e) { alert(e.message); }
+    finally { setSaving(false); }
   };
 
   const toggleSort = (field) => {
@@ -134,9 +111,11 @@ export default function Budget() {
     else { setSortBy(field); setSortDir('desc'); }
   };
 
+  if (loading) return <div className="text-text-tertiary py-12 text-center">Loading...</div>;
+  if (error) return <div className="text-accent-rose py-12 text-center">{error}</div>;
+
   return (
     <div className="space-y-8 stagger-fade">
-      {/* Month Selector + Stats */}
       <div className="flex items-center gap-4 mb-2">
         <button onClick={prevMonth} className="text-text-tertiary hover:text-text-primary"><ChevronLeft className="w-5 h-5" /></button>
         <h2 className="font-display text-xl">{monthName}</h2>
@@ -154,75 +133,59 @@ export default function Budget() {
         </div>
       </div>
 
-      {/* Add Transaction */}
       <Card header="Add Transaction">
         <div className="flex flex-wrap gap-3 items-end">
           <Input label="Date" type="date" value={newTxn.date} onChange={e => setNewTxn({ ...newTxn, date: e.target.value })} />
           <Input label="Amount" type="number" placeholder="0" value={newTxn.amount} onChange={e => setNewTxn({ ...newTxn, amount: e.target.value })} />
-          <Select
-            label="Type"
-            options={[{ value: 'income', label: 'Income' }, { value: 'expense', label: 'Expense' }]}
-            value={newTxn.type}
-            onChange={e => setNewTxn({ ...newTxn, type: e.target.value, category: '' })}
-          />
-          <Select
-            label="Category"
-            options={(newTxn.type === 'income' ? incomeCategories : expenseCategories).map(c => ({ value: c, label: c }))}
-            value={newTxn.category}
-            onChange={e => setNewTxn({ ...newTxn, category: e.target.value })}
-            placeholder="Select..."
-          />
+          <Select label="Type" options={[{ value: 'income', label: 'Income' }, { value: 'expense', label: 'Expense' }]} value={newTxn.type} onChange={e => setNewTxn({ ...newTxn, type: e.target.value, category: '' })} />
+          <Select label="Category" options={(newTxn.type === 'income' ? incomeCategories : expenseCategories).map(c => ({ value: c, label: c }))} value={newTxn.category} onChange={e => setNewTxn({ ...newTxn, category: e.target.value })} placeholder="Select..." />
           <Input label="Note" placeholder="Description" value={newTxn.description} onChange={e => setNewTxn({ ...newTxn, description: e.target.value })} />
-          <Button onClick={handleAddTxn}>Add</Button>
+          <Button onClick={handleAddTxn} disabled={saving}>{saving ? 'Adding...' : 'Add'}</Button>
         </div>
       </Card>
 
-      {/* Transaction Table */}
       <section>
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <h2 className="font-display text-xl">Transactions</h2>
           <div className="flex gap-2">
-            <Select
-              options={[...incomeCategories, ...expenseCategories].map(c => ({ value: c, label: c }))}
-              value={filterCategory}
-              onChange={e => setFilterCategory(e.target.value)}
-              placeholder="All Categories"
-            />
-            <Select
-              options={[{ value: 'income', label: 'Income' }, { value: 'expense', label: 'Expense' }]}
-              value={filterType}
-              onChange={e => setFilterType(e.target.value)}
-              placeholder="All Types"
-            />
+            <Select options={[...incomeCategories, ...expenseCategories].map(c => ({ value: c, label: c }))} value={filterCategory} onChange={e => setFilterCategory(e.target.value)} placeholder="All Categories" />
+            <Select options={[{ value: 'income', label: 'Income' }, { value: 'expense', label: 'Expense' }]} value={filterType} onChange={e => setFilterType(e.target.value)} placeholder="All Types" />
           </div>
         </div>
         <Card>
-          <Table>
-            <Thead>
-              <Th sortable onClick={() => toggleSort('date')}>Date</Th>
-              <Th>Description</Th>
-              <Th>Category</Th>
-              <Th sortable onClick={() => toggleSort('amount')}>Amount</Th>
-              <Th>Balance</Th>
-            </Thead>
-            <Tbody>
-              {displayedWithBalance.map(t => (
-                <Tr key={t.id}>
-                  <Td className="font-mono text-sm">{formatShortDate(t.date)}</Td>
-                  <Td>{t.description}</Td>
-                  <Td><Badge color={t.type === 'income' ? 'sage' : 'default'}>{t.category}</Badge></Td>
-                  <Td className={`font-mono ${t.type === 'income' ? 'text-accent-sage' : 'text-accent-rose'}`}>
-                    {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                  </Td>
-                  <Td className="font-mono text-text-secondary">{formatCurrency(t.balance)}</Td>
-                </Tr>
-              ))}
-            </Tbody>
-          </Table>
+          {displayed.length === 0 ? (
+            <p className="text-text-tertiary text-sm py-6 text-center">No transactions this month.</p>
+          ) : (
+            <Table>
+              <Thead>
+                <Th sortable onClick={() => toggleSort('date')}>Date</Th>
+                <Th>Description</Th>
+                <Th>Category</Th>
+                <Th sortable onClick={() => toggleSort('amount')}>Amount</Th>
+                <Th>Balance</Th>
+                <Th></Th>
+              </Thead>
+              <Tbody>
+                {displayedWithBalance.map(t => (
+                  <Tr key={t.id}>
+                    <Td className="font-mono text-sm">{formatShortDate(t.date)}</Td>
+                    <Td>{t.description}</Td>
+                    <Td><Badge color={t.type === 'income' ? 'sage' : 'default'}>{t.category}</Badge></Td>
+                    <Td className={`font-mono ${t.type === 'income' ? 'text-accent-sage' : 'text-accent-rose'}`}>
+                      {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                    </Td>
+                    <Td className="font-mono text-text-secondary">{formatCurrency(t.balance)}</Td>
+                    <Td>
+                      <button onClick={() => remove(t.id)} className="text-text-tertiary hover:text-accent-rose"><Trash2 className="w-4 h-4" /></button>
+                    </Td>
+                  </Tr>
+                ))}
+              </Tbody>
+            </Table>
+          )}
         </Card>
       </section>
 
-      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card header="Spending by Category">
           <ChartWrapper height={280}>
@@ -264,7 +227,6 @@ export default function Budget() {
           </ChartWrapper>
         </Card>
 
-        {/* Budget Targets */}
         <Card header={
           <button onClick={() => setShowTargets(!showTargets)} className="flex items-center gap-2 font-display text-lg text-text-primary w-full">
             Budget Targets
@@ -272,22 +234,26 @@ export default function Budget() {
           </button>
         }>
           {showTargets && (
-            <div className="space-y-3">
-              {Object.entries(budgetTargets).map(([cat, target]) => {
-                const spent = monthTxns.filter(t => t.type === 'expense' && t.category === cat).reduce((s, t) => s + t.amount, 0);
-                const pct = target > 0 ? (spent / target) * 100 : 0;
-                const color = pct > 100 ? 'rose' : pct > 80 ? 'amber' : 'sage';
-                return (
-                  <div key={cat}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-text-secondary">{cat}</span>
-                      <span className="font-mono text-text-primary">{formatCurrency(spent)} / {formatCurrency(target)}</span>
+            targets.length === 0 ? (
+              <p className="text-text-tertiary text-sm py-4 text-center">No budget targets set.</p>
+            ) : (
+              <div className="space-y-3">
+                {targets.map(t => {
+                  const spent = transactions.filter(txn => txn.type === 'expense' && txn.category === t.category).reduce((s, txn) => s + txn.amount, 0);
+                  const pct = t.amount > 0 ? (spent / t.amount) * 100 : 0;
+                  const color = pct > 100 ? 'rose' : pct > 80 ? 'amber' : 'sage';
+                  return (
+                    <div key={t.id}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-text-secondary">{t.category}</span>
+                        <span className="font-mono text-text-primary">{formatCurrency(spent)} / {formatCurrency(t.amount)}</span>
+                      </div>
+                      <ProgressBar value={spent} max={t.amount} color={color} />
                     </div>
-                    <ProgressBar value={spent} max={target} color={color} />
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )
           )}
         </Card>
       </div>

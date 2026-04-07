@@ -1,46 +1,39 @@
-import { useState, useMemo } from 'react';
-import { Check } from 'lucide-react';
+import { useMemo } from 'react';
+import { Check, Plus } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
+import { useState } from 'react';
 import Card from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
+import Button from '../components/ui/Button';
+import Input from '../components/ui/Input';
 import ProgressBar from '../components/ui/ProgressBar';
+import Modal from '../components/ui/Modal';
 import ChartWrapper from '../components/charts/ChartWrapper';
 import { chartColors, commonAxisProps, commonTooltipStyle } from '../components/charts/chartTheme';
-import { habitList, getStreak, getBestStreak } from '../data/habits';
 import { generateDatesBack } from '../lib/utils';
 import { useAnimatedNumber } from '../hooks/useAnimatedNumber';
-import useStore from '../store/useStore';
+import useHabits from '../hooks/useHabits';
 
 function AnimatedStreak({ value }) {
   const animated = useAnimatedNumber(value);
   return <span className="font-mono text-2xl font-semibold text-text-primary">{animated}</span>;
 }
 
-function CalendarHeatmap({ habitId, completions }) {
+function CalendarHeatmap({ habitId, completionDates }) {
   const days = generateDatesBack(90);
   const weeks = [];
   let week = [];
   days.forEach((d, i) => {
     week.push(d);
-    if (week.length === 7 || i === days.length - 1) {
-      weeks.push([...week]);
-      week = [];
-    }
+    if (week.length === 7 || i === days.length - 1) { weeks.push([...week]); week = []; }
   });
-
   return (
     <div className="flex gap-[3px] overflow-x-auto py-2">
       {weeks.map((w, wi) => (
         <div key={wi} className="flex flex-col gap-[3px]">
           {w.map(d => {
-            const done = completions.includes(d);
-            return (
-              <div
-                key={d}
-                title={`${d}: ${done ? 'Done' : 'Missed'}`}
-                className={`w-3 h-3 ${done ? 'bg-accent-sage' : 'bg-bg-input'} hover:ring-1 hover:ring-accent-cream transition-all cursor-default`}
-              />
-            );
+            const done = completionDates.includes(d);
+            return <div key={d} title={`${d}: ${done ? 'Done' : 'Missed'}`} className={`w-3 h-3 ${done ? 'bg-accent-sage' : 'bg-bg-input'} hover:ring-1 hover:ring-accent-cream transition-all cursor-default`} />;
           })}
         </div>
       ))}
@@ -49,75 +42,114 @@ function CalendarHeatmap({ habitId, completions }) {
 }
 
 export default function Habits() {
-  const { habitCompletions, toggleHabit } = useStore();
+  const { habits, entries, streaks, loading, error, create, toggle } = useHabits(90);
   const [trendView, setTrendView] = useState('combined');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newHabit, setNewHabit] = useState({ name: '', icon: '', target: 'Daily', color: 'sage' });
+  const [saving, setSaving] = useState(false);
 
   const days7 = generateDatesBack(7);
   const today = new Date().toISOString().split('T')[0];
 
-  // Weekly scorecard
-  const weeklyTotal = habitList.reduce((sum, h) => {
-    return sum + days7.filter(d => (habitCompletions[h.id] || []).includes(d)).length;
-  }, 0);
-  const weeklyMax = habitList.length * 7;
-  const weeklyPct = Math.round((weeklyTotal / weeklyMax) * 100);
+  // Build completionDates per habit from entries
+  const completionsByHabit = useMemo(() => {
+    const map = {};
+    for (const e of entries) {
+      if (!e.completed) continue;
+      if (!map[e.habit_id]) map[e.habit_id] = [];
+      map[e.habit_id].push(e.date);
+    }
+    return map;
+  }, [entries]);
 
-  // Trend data: weekly completion % over past 12 weeks
+  const weeklyTotal = habits.reduce((sum, h) => sum + days7.filter(d => (completionsByHabit[h.id] || []).includes(d)).length, 0);
+  const weeklyMax = habits.length * 7;
+  const weeklyPct = weeklyMax > 0 ? Math.round((weeklyTotal / weeklyMax) * 100) : 0;
+
   const trendData = useMemo(() => {
-    const data = [];
-    const allDays = generateDatesBack(84); // 12 weeks
-    for (let w = 0; w < 12; w++) {
+    const allDays = generateDatesBack(84);
+    return Array.from({ length: 12 }, (_, w) => {
       const weekDays = allDays.slice(w * 7, (w + 1) * 7);
-      const weekLabel = `W${w + 1}`;
-
+      const point = { week: `W${w + 1}` };
       if (trendView === 'combined') {
-        const completed = habitList.reduce((sum, h) =>
-          sum + weekDays.filter(d => (habitCompletions[h.id] || []).includes(d)).length, 0
-        );
-        data.push({ week: weekLabel, completion: Math.round((completed / (habitList.length * 7)) * 100) });
+        const completed = habits.reduce((sum, h) => sum + weekDays.filter(d => (completionsByHabit[h.id] || []).includes(d)).length, 0);
+        point.completion = habits.length > 0 ? Math.round((completed / (habits.length * 7)) * 100) : 0;
       } else {
-        const point = { week: weekLabel };
-        habitList.forEach(h => {
-          const completed = weekDays.filter(d => (habitCompletions[h.id] || []).includes(d)).length;
+        habits.forEach(h => {
+          const completed = weekDays.filter(d => (completionsByHabit[h.id] || []).includes(d)).length;
           point[h.id] = Math.round((completed / 7) * 100);
         });
-        data.push(point);
       }
-    }
-    return data;
-  }, [habitCompletions, trendView]);
+      return point;
+    });
+  }, [completionsByHabit, habits, trendView]);
+
+  const handleToggle = async (habitId, date) => {
+    const done = (completionsByHabit[habitId] || []).includes(date);
+    try { await toggle(habitId, date, !done); } catch (e) { alert(e.message); }
+  };
+
+  const handleAddHabit = async () => {
+    if (!newHabit.name) return;
+    setSaving(true);
+    try {
+      await create(newHabit);
+      setNewHabit({ name: '', icon: '', target: 'Daily', color: 'sage' });
+      setShowAddModal(false);
+    } catch (e) { alert(e.message); }
+    finally { setSaving(false); }
+  };
+
+  if (loading) return <div className="text-text-tertiary py-12 text-center">Loading...</div>;
+  if (error) return <div className="text-accent-rose py-12 text-center">{error}</div>;
+
+  if (habits.length === 0) return (
+    <div className="space-y-8 stagger-fade">
+      <div className="text-center py-16 text-text-tertiary">
+        <p className="mb-4">No habits yet. Start tracking your first habit.</p>
+        <Button onClick={() => setShowAddModal(true)}><Plus className="w-4 h-4" /> Add Habit</Button>
+      </div>
+      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="New Habit">
+        <div className="space-y-4">
+          <Input label="Name" value={newHabit.name} onChange={e => setNewHabit({ ...newHabit, name: e.target.value })} placeholder="e.g. Morning Run" />
+          <Input label="Icon (emoji)" value={newHabit.icon} onChange={e => setNewHabit({ ...newHabit, icon: e.target.value })} placeholder="🏃" />
+          <Input label="Target" value={newHabit.target} onChange={e => setNewHabit({ ...newHabit, target: e.target.value })} placeholder="Daily" />
+          <Button onClick={handleAddHabit} disabled={saving}>{saving ? 'Adding...' : 'Add Habit'}</Button>
+        </div>
+      </Modal>
+    </div>
+  );
 
   return (
     <div className="space-y-8 stagger-fade">
+      <div className="flex justify-end">
+        <Button size="sm" onClick={() => setShowAddModal(true)}><Plus className="w-4 h-4" /> Add Habit</Button>
+      </div>
+
       {/* Active Streaks */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {habitList.map(h => {
-          const streak = getStreak(h.id);
-          const best = getBestStreak(h.id);
-          return (
-            <Card key={h.id} className="text-center">
-              <span className="text-2xl">{h.icon}</span>
-              <p className="text-sm text-text-secondary mt-1">{h.name}</p>
-              <AnimatedStreak value={streak} />
-              <p className="text-[10px] text-text-tertiary">day streak</p>
-              <p className="text-[10px] text-text-tertiary mt-1">Best: {best}d</p>
-            </Card>
-          );
-        })}
+        {habits.map(h => (
+          <Card key={h.id} className="text-center">
+            <span className="text-2xl">{h.icon}</span>
+            <p className="text-sm text-text-secondary mt-1">{h.name}</p>
+            <AnimatedStreak value={streaks[h.id] || 0} />
+            <p className="text-[10px] text-text-tertiary">day streak</p>
+          </Card>
+        ))}
       </div>
 
       {/* Calendar Heatmaps */}
       <section>
         <h2 className="font-display text-xl mb-4">90-Day Heatmaps</h2>
         <div className="space-y-4">
-          {habitList.map(h => (
+          {habits.map(h => (
             <Card key={h.id}>
               <div className="flex items-center gap-3 mb-2">
                 <span>{h.icon}</span>
                 <span className="text-sm font-medium text-text-primary">{h.name}</span>
-                <Badge color={h.color}>{getStreak(h.id)}d</Badge>
+                <Badge color={h.color || 'sage'}>{streaks[h.id] || 0}d</Badge>
               </div>
-              <CalendarHeatmap habitId={h.id} completions={habitCompletions[h.id] || []} />
+              <CalendarHeatmap habitId={h.id} completionDates={completionsByHabit[h.id] || []} />
             </Card>
           ))}
         </div>
@@ -136,20 +168,18 @@ export default function Habits() {
             <div className="w-16 text-right text-xs text-text-tertiary">Score</div>
           </div>
 
-          {habitList.map(h => {
-            const count = days7.filter(d => (habitCompletions[h.id] || []).includes(d)).length;
+          {habits.map(h => {
+            const count = days7.filter(d => (completionsByHabit[h.id] || []).includes(d)).length;
             return (
               <div key={h.id} className="flex items-center gap-2">
                 <div className="w-28 text-sm text-text-secondary truncate">{h.icon} {h.name}</div>
                 {days7.map(d => {
-                  const done = (habitCompletions[h.id] || []).includes(d);
+                  const done = (completionsByHabit[h.id] || []).includes(d);
                   return (
                     <button
                       key={d}
-                      onClick={() => toggleHabit(h.id, d)}
-                      className={`w-10 h-8 flex items-center justify-center border transition-colors ${
-                        done ? 'bg-accent-sage/20 border-accent-sage/40' : 'bg-bg-input border-border hover:border-border-hover'
-                      }`}
+                      onClick={() => handleToggle(h.id, d)}
+                      className={`w-10 h-8 flex items-center justify-center border transition-colors ${done ? 'bg-accent-sage/20 border-accent-sage/40' : 'bg-bg-input border-border hover:border-border-hover'}`}
                     >
                       {done && <Check className="w-3.5 h-3.5 text-accent-sage" />}
                     </button>
@@ -173,18 +203,8 @@ export default function Habits() {
         <div className="flex items-center justify-between">
           <span className="font-display text-lg text-text-primary">Trends</span>
           <div className="flex gap-2">
-            <button
-              onClick={() => setTrendView('combined')}
-              className={`text-xs px-2 py-1 ${trendView === 'combined' ? 'bg-bg-tertiary text-accent-cream' : 'text-text-tertiary hover:text-text-primary'}`}
-            >
-              Combined
-            </button>
-            <button
-              onClick={() => setTrendView('individual')}
-              className={`text-xs px-2 py-1 ${trendView === 'individual' ? 'bg-bg-tertiary text-accent-cream' : 'text-text-tertiary hover:text-text-primary'}`}
-            >
-              Per Habit
-            </button>
+            <button onClick={() => setTrendView('combined')} className={`text-xs px-2 py-1 ${trendView === 'combined' ? 'bg-bg-tertiary text-accent-cream' : 'text-text-tertiary hover:text-text-primary'}`}>Combined</button>
+            <button onClick={() => setTrendView('individual')} className={`text-xs px-2 py-1 ${trendView === 'individual' ? 'bg-bg-tertiary text-accent-cream' : 'text-text-tertiary hover:text-text-primary'}`}>Per Habit</button>
           </div>
         </div>
       }>
@@ -199,22 +219,23 @@ export default function Habits() {
             ) : (
               <>
                 <Legend wrapperStyle={{ color: chartColors.text, fontFamily: 'DM Sans', fontSize: 11 }} />
-                {habitList.map(h => (
-                  <Line
-                    key={h.id}
-                    type="monotone"
-                    dataKey={h.id}
-                    name={h.name}
-                    stroke={chartColors[h.color] || chartColors.sage}
-                    strokeWidth={1.5}
-                    dot={false}
-                  />
+                {habits.map(h => (
+                  <Line key={h.id} type="monotone" dataKey={h.id} name={h.name} stroke={chartColors[h.color] || chartColors.sage} strokeWidth={1.5} dot={false} />
                 ))}
               </>
             )}
           </LineChart>
         </ChartWrapper>
       </Card>
+
+      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="New Habit">
+        <div className="space-y-4">
+          <Input label="Name" value={newHabit.name} onChange={e => setNewHabit({ ...newHabit, name: e.target.value })} placeholder="e.g. Morning Run" />
+          <Input label="Icon (emoji)" value={newHabit.icon} onChange={e => setNewHabit({ ...newHabit, icon: e.target.value })} placeholder="🏃" />
+          <Input label="Target" value={newHabit.target} onChange={e => setNewHabit({ ...newHabit, target: e.target.value })} placeholder="Daily" />
+          <Button onClick={handleAddHabit} disabled={saving}>{saving ? 'Adding...' : 'Add Habit'}</Button>
+        </div>
+      </Modal>
     </div>
   );
 }
