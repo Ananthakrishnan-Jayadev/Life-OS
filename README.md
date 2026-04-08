@@ -10,7 +10,7 @@ React 18 · Vite · Tailwind CSS · Supabase (Auth + Database + Storage) · Zust
 
 ```bash
 git clone https://github.com/your-username/lifeos.git
-cd lifeos/frontend
+cd lifeos/app
 npm install
 cp .env.example .env
 # Fill in your Supabase credentials in .env
@@ -30,7 +30,7 @@ npm run dev
 
 1. Push the repo to GitHub
 2. Go to [vercel.com](https://vercel.com) → New Project → Import your repo
-3. Set **Root Directory** to `frontend`
+3. Set **Root Directory** to `app`
 4. Add environment variables: `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
 5. Deploy — `vercel.json` handles SPA routing automatically
 
