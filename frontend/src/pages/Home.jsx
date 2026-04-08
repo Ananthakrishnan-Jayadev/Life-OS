@@ -11,6 +11,8 @@ import useDashboard from '../hooks/useDashboard';
 import useInbox from '../hooks/useInbox';
 import { upsertStudyEntry, upsertStudyLog } from '../services/studyService';
 import { useAuthStore } from '../store/authStore';
+import { toast } from '../store/toastStore';
+import { SkeletonCard } from '../components/ui/Skeleton';
 
 function TrendArrow({ current, previous, suffix = '', invert = false }) {
   if (current == null || previous == null) return null;
@@ -57,8 +59,11 @@ export default function Home() {
 
   const handleCapture = async () => {
     if (!captureText.trim()) return;
-    try { await createInboxItem({ content: captureText.trim(), tag: 'note' }); setCaptureText(''); }
-    catch (e) { alert(e.message); }
+    try {
+      await createInboxItem({ content: captureText.trim(), tag: 'note' });
+      setCaptureText('');
+      toast.success('Captured!');
+    } catch (e) { toast.error('Failed to capture'); }
   };
 
   const handleStudyToggle = async (trackId) => {
@@ -72,11 +77,16 @@ export default function Home() {
       }
       const current = todayTrackMap[trackId]?.completed || false;
       await upsertStudyLog({ study_entry_id: entryId, track_id: trackId, completed: !current });
-    } catch (e) { alert(e.message); }
+      toast.success(current ? 'Track unchecked' : 'Track completed!');
+    } catch (e) { toast.error('Failed to update track'); }
     finally { setToggling(null); }
   };
 
-  if (loading) return <div className="text-text-tertiary py-12 text-center">Loading...</div>;
+  if (loading) return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {[1,2,3,4,5,6,7].map(i => <SkeletonCard key={i} className="h-36" />)}
+    </div>
+  );
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 stagger-fade">

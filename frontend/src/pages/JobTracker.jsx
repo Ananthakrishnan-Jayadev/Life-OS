@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LayoutList, Columns, Plus, Trash2 } from 'lucide-react';
+import { LayoutList, Columns, Plus, Trash2, Briefcase } from 'lucide-react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import Card from '../components/ui/Card';
 import StatCard from '../components/ui/StatCard';
@@ -8,11 +8,14 @@ import Input from '../components/ui/Input';
 import Select from '../components/ui/Select';
 import Badge from '../components/ui/Badge';
 import Modal from '../components/ui/Modal';
+import EmptyState from '../components/ui/EmptyState';
+import { SkeletonStatCards, SkeletonTable } from '../components/ui/Skeleton';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../components/ui/Table';
 import ChartWrapper from '../components/charts/ChartWrapper';
 import { chartColors, commonAxisProps, commonTooltipStyle } from '../components/charts/chartTheme';
 import { statuses, statusColors } from '../data/jobs';
 import { formatShortDate } from '../lib/utils';
+import { toast } from '../store/toastStore';
 import useJobs from '../hooks/useJobs';
 
 const STATUS_PIE_COLORS = {
@@ -21,7 +24,7 @@ const STATUS_PIE_COLORS = {
 };
 
 export default function JobTracker() {
-  const { data: jobs, stats, loading, error, create, update, remove } = useJobs();
+  const { data: jobs, setData, stats, loading, error, create, update, remove } = useJobs();
   const [view, setView] = useState('table');
   const [showAddModal, setShowAddModal] = useState(false);
   const [sortBy, setSortBy] = useState('date_applied');
@@ -71,15 +74,46 @@ export default function JobTracker() {
       await create({ ...newJob, date_applied: new Date().toISOString().split('T')[0] });
       setNewJob({ company: '', title: '', salary: '', notes: '', status: 'Applied' });
       setShowAddModal(false);
-    } catch (e) { alert(e.message); }
-    finally { setSaving(false); }
+      toast.success('Application added!');
+    } catch (e) {
+      toast.error('Failed to add application');
+    } finally {
+      setSaving(false);
+    }
   };
 
+  // Optimistic status change
   const handleStatusChange = async (id, status) => {
-    try { await update(id, { status }); } catch (e) { alert(e.message); }
+    const prev = jobs;
+    setData(d => d.map(j => j.id === id ? { ...j, status } : j));
+    try {
+      await update(id, { status });
+      toast.success(`Status updated to ${status}`);
+    } catch (e) {
+      setData(prev);
+      toast.error('Failed to update status');
+    }
   };
 
-  if (loading) return <div className="text-text-tertiary py-12 text-center">Loading...</div>;
+  const handleDelete = async (id) => {
+    const prev = jobs;
+    setData(d => d.filter(j => j.id !== id));
+    try {
+      await remove(id);
+      toast.success('Application deleted');
+    } catch (e) {
+      setData(prev);
+      toast.error('Failed to delete');
+    }
+  };
+
+  if (loading) return (
+    <div className="space-y-8">
+      <SkeletonStatCards count={5} />
+      <SkeletonTable rows={6} cols={6} />
+    </div>
+  );
+
   if (error) return <div className="text-accent-rose py-12 text-center">{error}</div>;
 
   return (
@@ -103,7 +137,7 @@ export default function JobTracker() {
       {view === 'table' && (
         <Card>
           {jobs.length === 0 ? (
-            <p className="text-text-tertiary text-sm py-6 text-center">No applications yet. Add your first one.</p>
+            <EmptyState icon={Briefcase} message="No applications yet — start tracking your job search." action="Add Application" onAction={() => setShowAddModal(true)} />
           ) : (
             <Table>
               <Thead>
@@ -127,7 +161,7 @@ export default function JobTracker() {
                     <Td className="font-mono text-sm text-text-secondary">{job.salary}</Td>
                     <Td className="text-text-tertiary text-sm max-w-[200px] truncate">{job.notes}</Td>
                     <Td>
-                      <button onClick={() => remove(job.id)} className="text-text-tertiary hover:text-accent-rose"><Trash2 className="w-4 h-4" /></button>
+                      <button onClick={() => handleDelete(job.id)} className="text-text-tertiary hover:text-accent-rose"><Trash2 className="w-4 h-4" /></button>
                     </Td>
                   </Tr>
                 ))}
@@ -147,15 +181,19 @@ export default function JobTracker() {
                   <Badge color={statusColors[status]}>{status}</Badge>
                   <span className="text-xs font-mono text-text-tertiary">{statusJobs.length}</span>
                 </div>
-                <div className="space-y-2">
-                  {statusJobs.map(job => (
-                    <div key={job.id} className="bg-bg-secondary border border-border p-3 hover:bg-bg-tertiary transition-colors">
-                      <p className="font-medium text-sm text-text-primary">{job.company}</p>
-                      <p className="text-xs text-text-secondary mt-0.5">{job.title}</p>
-                      <p className="text-[10px] font-mono text-text-tertiary mt-2">{formatShortDate(job.date_applied)}</p>
-                    </div>
-                  ))}
-                </div>
+                {statusJobs.length === 0 ? (
+                  <div className="border border-dashed border-border p-4 text-center text-xs text-text-tertiary">Empty</div>
+                ) : (
+                  <div className="space-y-2">
+                    {statusJobs.map(job => (
+                      <div key={job.id} className="bg-bg-secondary border border-border p-3 hover:bg-bg-tertiary transition-colors">
+                        <p className="font-medium text-sm text-text-primary">{job.company}</p>
+                        <p className="text-xs text-text-secondary mt-0.5">{job.title}</p>
+                        <p className="text-[10px] font-mono text-text-tertiary mt-2">{formatShortDate(job.date_applied)}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -173,7 +211,6 @@ export default function JobTracker() {
             </PieChart>
           </ChartWrapper>
         </Card>
-
         <Card header="Applications Over Time">
           <ChartWrapper height={250}>
             <BarChart data={weeklyData}>

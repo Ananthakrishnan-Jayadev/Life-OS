@@ -32,5 +32,5 @@ export default function useStudy(date = null) {
   const upsertEntry = async (d) => { await svc.upsertStudyEntry({ ...d, user_id: userId }); await fetch() }
   const upsertLog = async (d) => { await svc.upsertStudyLog(d); await fetch() }
 
-  return { data, streaks, loading, error, upsertEntry, upsertLog, refetch: fetch }
+  return { data, setData, streaks, loading, error, upsertEntry, upsertLog, refetch: fetch }
 }

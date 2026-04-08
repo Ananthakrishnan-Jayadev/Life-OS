@@ -13,7 +13,8 @@ import Budget from './pages/Budget';
 import JobTracker from './pages/JobTracker';
 import Habits from './pages/Habits';
 import Inbox from './pages/Inbox';
-import { useAuthStore } from './store/authStore';
+import { useAuthStore } from './store/authStore'
+import ToastContainer from './components/ui/Toast';
 
 const pages = [
   { path: '/', element: <Home />, title: 'Dashboard' },
@@ -34,6 +35,8 @@ export default function App() {
   }, [initialize]);
 
   return (
+    <>
+    <ToastContainer />
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route
@@ -61,5 +64,6 @@ export default function App() {
         }
       />
     </Routes>
+    </>
   );
 }

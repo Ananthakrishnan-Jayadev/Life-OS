@@ -33,5 +33,5 @@ export default function useJobs() {
   const update = async (id, d) => { await svc.updateApplication(id, d); await fetch() }
   const remove = async (id) => { await svc.deleteApplication(id); await fetch() }
 
-  return { data, stats, loading, error, create, update, remove, refetch: fetch }
+  return { data, setData, stats, loading, error, create, update, remove, refetch: fetch }
 }

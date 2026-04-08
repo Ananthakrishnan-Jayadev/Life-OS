@@ -23,7 +23,10 @@ export default function useMeasurements(limit = 50) {
 
   useEffect(() => { fetch() }, [fetch])
 
-  const create = async (d) => { await svc.createMeasurement({ ...d, user_id: userId }); await fetch() }
+  const create = async (d, file = null) => {
+    await svc.createMeasurement({ ...d, user_id: userId }, file)
+    await fetch()
+  }
   const remove = async (id) => { await svc.deleteMeasurement(id); await fetch() }
 
   return { data, loading, error, create, remove, refetch: fetch }

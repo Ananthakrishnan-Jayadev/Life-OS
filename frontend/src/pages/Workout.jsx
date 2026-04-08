@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
+import { Plus, ChevronDown, ChevronRight, Trash2, Dumbbell } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -7,11 +7,14 @@ import Input from '../components/ui/Input';
 import Select from '../components/ui/Select';
 import Badge from '../components/ui/Badge';
 import Modal from '../components/ui/Modal';
+import EmptyState from '../components/ui/EmptyState';
+import { SkeletonTable, SkeletonChart } from '../components/ui/Skeleton';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../components/ui/Table';
 import ChartWrapper from '../components/charts/ChartWrapper';
 import { chartColors, commonAxisProps, commonTooltipStyle } from '../components/charts/chartTheme';
 import { bodyParts, equipment } from '../data/exercises';
 import { formatShortDate } from '../lib/utils';
+import { toast } from '../store/toastStore';
 import useExercises from '../hooks/useExercises';
 import useWorkouts from '../hooks/useWorkouts';
 
@@ -26,22 +29,15 @@ export default function Workout() {
   const [selectedExercise, setSelectedExercise] = useState('');
   const [historyBpFilter, setHistoryBpFilter] = useState('');
   const [progressionData, setProgressionData] = useState([]);
-
   const [logDate, setLogDate] = useState(new Date().toISOString().split('T')[0]);
   const [logBodyPart, setLogBodyPart] = useState('');
   const [logExercises, setLogExercises] = useState([]);
   const [logAddExercise, setLogAddExercise] = useState('');
   const [saving, setSaving] = useState(false);
-
   const [newEx, setNewEx] = useState({ name: '', body_part: '', equipment: '' });
 
-  const filteredExercises = exercises.filter(e =>
-    (!bpFilter || e.body_part === bpFilter) && (!eqFilter || e.equipment === eqFilter)
-  );
-
-  const filteredHistory = workouts.filter(w =>
-    !historyBpFilter || w.body_part === historyBpFilter
-  );
+  const filteredExercises = exercises.filter(e => (!bpFilter || e.body_part === bpFilter) && (!eqFilter || e.equipment === eqFilter));
+  const filteredHistory = workouts.filter(w => !historyBpFilter || w.body_part === historyBpFilter);
 
   useEffect(() => {
     if (!selectedExercise) return;
@@ -57,19 +53,8 @@ export default function Workout() {
     setLogExercises([...logExercises, { name: logAddExercise, sets: [{ reps: '', weight: '' }] }]);
     setLogAddExercise('');
   };
-
-  const addSetToExercise = (idx) => {
-    const updated = [...logExercises];
-    updated[idx].sets.push({ reps: '', weight: '' });
-    setLogExercises(updated);
-  };
-
-  const updateSet = (exIdx, setIdx, field, value) => {
-    const updated = [...logExercises];
-    updated[exIdx].sets[setIdx][field] = value;
-    setLogExercises(updated);
-  };
-
+  const addSetToExercise = (idx) => { const u = [...logExercises]; u[idx].sets.push({ reps: '', weight: '' }); setLogExercises(u); };
+  const updateSet = (exIdx, setIdx, field, value) => { const u = [...logExercises]; u[exIdx].sets[setIdx][field] = value; setLogExercises(u); };
   const removeExercise = (idx) => setLogExercises(logExercises.filter((_, i) => i !== idx));
 
   const saveWorkout = async () => {
@@ -88,8 +73,9 @@ export default function Workout() {
       }
       setLogExercises([]);
       setLogBodyPart('');
+      toast.success('Workout saved!');
     } catch (e) {
-      alert(e.message);
+      toast.error('Failed to save workout');
     } finally {
       setSaving(false);
     }
@@ -97,12 +83,26 @@ export default function Workout() {
 
   const handleAddExercise = async () => {
     if (!newEx.name) return;
-    await createExercise(newEx);
-    setNewEx({ name: '', body_part: '', equipment: '' });
-    setShowAddExercise(false);
+    try {
+      await createExercise(newEx);
+      setNewEx({ name: '', body_part: '', equipment: '' });
+      setShowAddExercise(false);
+      toast.success('Exercise added!');
+    } catch (e) {
+      toast.error('Failed to add exercise');
+    }
   };
 
-  if (exLoading && wkLoading) return <div className="text-text-tertiary py-12 text-center">Loading...</div>;
+  const handleDeleteWorkout = async (id) => {
+    try {
+      await deleteWorkout(id);
+      toast.success('Workout deleted');
+    } catch (e) {
+      toast.error('Failed to delete workout');
+    }
+  };
+
+  const loading = exLoading && wkLoading;
 
   return (
     <div className="space-y-8 stagger-fade">
@@ -117,8 +117,8 @@ export default function Workout() {
           </div>
         </div>
         <Card>
-          {filteredExercises.length === 0 ? (
-            <p className="text-text-tertiary text-sm py-6 text-center">No exercises yet. Add your first one.</p>
+          {exLoading ? <SkeletonTable rows={5} cols={4} /> : filteredExercises.length === 0 ? (
+            <EmptyState icon={Dumbbell} message="No exercises yet — add your first one." action="Add Exercise" onAction={() => setShowAddExercise(true)} />
           ) : (
             <Table>
               <Thead><Th>Exercise</Th><Th>Body Part</Th><Th>Equipment</Th><Th>Personal Best</Th></Thead>
@@ -167,15 +167,11 @@ export default function Workout() {
             <div className="flex gap-2">
               <Select
                 options={exercises.filter(e => !logBodyPart || e.body_part === logBodyPart).map(e => ({ value: e.name, label: e.name }))}
-                value={logAddExercise}
-                onChange={e => setLogAddExercise(e.target.value)}
-                placeholder="Add exercise..."
+                value={logAddExercise} onChange={e => setLogAddExercise(e.target.value)} placeholder="Add exercise..."
               />
               <Button size="sm" onClick={addExerciseToLog}><Plus className="w-4 h-4" /></Button>
             </div>
-            <Button onClick={saveWorkout} disabled={saving || logExercises.length === 0}>
-              {saving ? 'Saving...' : 'Save Workout'}
-            </Button>
+            <Button onClick={saveWorkout} disabled={saving || logExercises.length === 0}>{saving ? 'Saving...' : 'Save Workout'}</Button>
           </div>
         </Card>
       </section>
@@ -187,8 +183,8 @@ export default function Workout() {
           <Select options={bodyParts.map(b => ({ value: b, label: b }))} value={historyBpFilter} onChange={e => setHistoryBpFilter(e.target.value)} placeholder="All Body Parts" />
         </div>
         <Card>
-          {filteredHistory.length === 0 ? (
-            <p className="text-text-tertiary text-sm py-6 text-center">No workouts logged yet.</p>
+          {wkLoading ? <SkeletonTable rows={5} cols={5} /> : filteredHistory.length === 0 ? (
+            <EmptyState icon={Dumbbell} message="No workouts logged yet — start tracking above." />
           ) : (
             <Table>
               <Thead><Th>Date</Th><Th>Body Part</Th><Th>Exercises</Th><Th>Volume</Th><Th></Th></Thead>
@@ -218,7 +214,7 @@ export default function Workout() {
                                 </div>
                               </div>
                             ))}
-                            <button onClick={() => deleteWorkout(w.id)} className="text-xs text-accent-rose hover:underline mt-2">Delete workout</button>
+                            <button onClick={() => handleDeleteWorkout(w.id)} className="text-xs text-accent-rose hover:underline mt-2">Delete workout</button>
                           </td>
                         </tr>
                       )}
@@ -231,20 +227,17 @@ export default function Workout() {
         </Card>
       </section>
 
-      {/* Progression Chart */}
+      {/* Progression */}
       <section>
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-display text-xl">Progression</h2>
-          <Select
-            options={exercises.map(e => ({ value: e.name, label: e.name }))}
-            value={selectedExercise}
-            onChange={e => setSelectedExercise(e.target.value)}
-            placeholder="Select exercise..."
-          />
+          <Select options={exercises.map(e => ({ value: e.name, label: e.name }))} value={selectedExercise} onChange={e => setSelectedExercise(e.target.value)} placeholder="Select exercise..." />
         </div>
         <Card header="Weight Over Time">
-          {progressionData.length === 0 ? (
-            <p className="text-text-tertiary text-sm py-6 text-center">Select an exercise to see progression.</p>
+          {!selectedExercise ? (
+            <EmptyState message="Select an exercise above to see progression." />
+          ) : progressionData.length === 0 ? (
+            <EmptyState message="No data yet for this exercise." />
           ) : (
             <ChartWrapper height={250}>
               <LineChart data={progressionData}>
@@ -259,7 +252,6 @@ export default function Workout() {
         </Card>
       </section>
 
-      {/* Add Exercise Modal */}
       <Modal isOpen={showAddExercise} onClose={() => setShowAddExercise(false)} title="Add Exercise">
         <div className="space-y-4">
           <Input label="Exercise Name" placeholder="e.g. Bulgarian Split Squat" value={newEx.name} onChange={e => setNewEx({ ...newEx, name: e.target.value })} />

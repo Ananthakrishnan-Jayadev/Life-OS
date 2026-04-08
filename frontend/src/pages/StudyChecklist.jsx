@@ -1,20 +1,23 @@
 import { useState } from 'react';
-import { ChevronLeft, ChevronRight, ChevronDown, Check, Square } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Check, Square, BookOpen } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import Card from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import ProgressBar from '../components/ui/ProgressBar';
+import EmptyState from '../components/ui/EmptyState';
+import { SkeletonCard } from '../components/ui/Skeleton';
 import ChartWrapper from '../components/charts/ChartWrapper';
 import { chartColors, commonAxisProps, commonTooltipStyle } from '../components/charts/chartTheme';
 import { tracks } from '../data/study';
 import { formatShortDate } from '../lib/utils';
+import { toast } from '../store/toastStore';
 import useStudy from '../hooks/useStudy';
 import { upsertStudyEntry, upsertStudyLog } from '../services/studyService';
 import { useAuthStore } from '../store/authStore';
 
 export default function StudyChecklist() {
   const userId = useAuthStore(s => s.user?.id);
-  const { data: studyEntries, streaks, loading, refetch } = useStudy();
+  const { data: studyEntries, setData, streaks, loading, refetch } = useStudy();
   const [dateOffset, setDateOffset] = useState(0);
   const [expandedTrack, setExpandedTrack] = useState(null);
   const [expandedHistory, setExpandedHistory] = useState(null);
@@ -25,7 +28,7 @@ export default function StudyChecklist() {
   currentDate.setDate(currentDate.getDate() - dateOffset);
   const dateKey = currentDate.toISOString().split('T')[0];
 
-  // Normalize entries to {date: {tracks: {id: {completed, log}}}} shape
+  // Normalize to {date: {id, tracks: {trackId: {completed}}}}
   const entryMap = {};
   for (const entry of studyEntries) {
     const trackMap = {};
@@ -44,39 +47,63 @@ export default function StudyChecklist() {
     weekDates.push(d.toISOString().split('T')[0]);
   }
 
-  const totalCompleted = weekDates.reduce((sum, d) => {
-    return sum + tracks.filter(t => entryMap[d]?.tracks[t.id]?.completed).length;
-  }, 0);
+  const totalCompleted = weekDates.reduce((sum, d) => sum + tracks.filter(t => entryMap[d]?.tracks[t.id]?.completed).length, 0);
   const totalPossible = weekDates.length * tracks.length;
+  const barData = tracks.map(t => ({ name: t.name, completed: weekDates.filter(d => entryMap[d]?.tracks[t.id]?.completed).length }));
 
-  const barData = tracks.map(t => ({
-    name: t.name,
-    completed: weekDates.filter(d => entryMap[d]?.tracks[t.id]?.completed).length,
-  }));
-
+  // Optimistic toggle
   const handleToggle = async (trackId) => {
+    if (toggling === trackId) return;
     setToggling(trackId);
+
+    const currentlyDone = dayEntry?.tracks[trackId]?.completed || false;
+    const newDone = !currentlyDone;
+
+    // Optimistic: update local data
+    const prevData = studyEntries;
+    setData(prev => {
+      const existing = prev.find(e => e.date === dateKey);
+      if (existing) {
+        return prev.map(e => {
+          if (e.date !== dateKey) return e;
+          const logs = e.study_logs || [];
+          const existingLog = logs.find(l => l.track_id === trackId);
+          const newLogs = existingLog
+            ? logs.map(l => l.track_id === trackId ? { ...l, completed: newDone } : l)
+            : [...logs, { track_id: trackId, completed: newDone, id: `opt-${Date.now()}` }];
+          return { ...e, study_logs: newLogs };
+        });
+      }
+      return [...prev, { date: dateKey, id: null, study_logs: [{ track_id: trackId, completed: newDone, id: `opt-${Date.now()}` }] }];
+    });
+
     try {
       let entryId = dayEntry?.id;
       if (!entryId) {
         const entry = await upsertStudyEntry({ user_id: userId, date: dateKey });
         entryId = entry.id;
       }
-      const currentlyDone = dayEntry?.tracks[trackId]?.completed || false;
-      await upsertStudyLog({ study_entry_id: entryId, track_id: trackId, completed: !currentlyDone });
+      await upsertStudyLog({ study_entry_id: entryId, track_id: trackId, completed: newDone });
       await refetch();
+      toast.success(newDone ? 'Track completed!' : 'Track unchecked');
     } catch (e) {
-      alert(e.message);
+      setData(prevData);
+      toast.error('Failed to update — please try again');
     } finally {
       setToggling(null);
     }
   };
 
-  if (loading) return <div className="text-text-tertiary py-12 text-center">Loading...</div>;
+  if (loading) return (
+    <div className="space-y-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {[1,2,3,4].map(i => <SkeletonCard key={i} />)}
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-8 stagger-fade">
-      {/* Date Navigation */}
       <div className="flex items-center gap-4">
         <button onClick={() => setDateOffset(dateOffset + 1)} className="text-text-tertiary hover:text-text-primary">
           <ChevronLeft className="w-5 h-5" />
@@ -89,14 +116,12 @@ export default function StudyChecklist() {
         </button>
       </div>
 
-      {/* Today's Checklist */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {tracks.map(track => {
           const entry = dayEntry?.tracks[track.id];
           const done = entry?.completed || false;
           const isExpanded = expandedTrack === track.id;
           const streak = streaks[track.id] || 0;
-
           return (
             <Card key={track.id} className="relative">
               <div className="flex items-center justify-between">
@@ -129,7 +154,6 @@ export default function StudyChecklist() {
         })}
       </div>
 
-      {/* Weekly Summary */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card header="Weekly Scorecard">
           <div className="space-y-3">
@@ -182,12 +206,11 @@ export default function StudyChecklist() {
         </Card>
       </div>
 
-      {/* History */}
       <section>
         <h2 className="font-display text-xl mb-4">History</h2>
         <Card>
           {studyEntries.length === 0 ? (
-            <p className="text-text-tertiary text-sm py-6 text-center">No study entries yet. Start checking off tracks above.</p>
+            <EmptyState icon={BookOpen} message="No study entries yet — start checking off tracks above." />
           ) : (
             <div className="space-y-2 max-h-[400px] overflow-y-auto">
               {[...studyEntries].slice(0, 20).map(entry => {

@@ -1,9 +1,6 @@
 import { useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
-import {
-  PieChart, Pie, Cell, BarChart, Bar, LineChart, Line,
-  XAxis, YAxis, Tooltip, CartesianGrid, Legend,
-} from 'recharts';
+import { ChevronLeft, ChevronRight, ChevronDown, Trash2, DollarSign } from 'lucide-react';
+import { PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
 import Card from '../components/ui/Card';
 import StatCard from '../components/ui/StatCard';
 import Button from '../components/ui/Button';
@@ -11,11 +8,14 @@ import Input from '../components/ui/Input';
 import Select from '../components/ui/Select';
 import Badge from '../components/ui/Badge';
 import ProgressBar from '../components/ui/ProgressBar';
+import EmptyState from '../components/ui/EmptyState';
+import { SkeletonStatCards, SkeletonTable } from '../components/ui/Skeleton';
 import { Table, Thead, Tbody, Tr, Th, Td } from '../components/ui/Table';
 import ChartWrapper from '../components/charts/ChartWrapper';
 import { chartColors, commonAxisProps, commonTooltipStyle } from '../components/charts/chartTheme';
 import { incomeCategories, expenseCategories } from '../data/budget';
 import { formatCurrency, formatShortDate } from '../lib/utils';
+import { toast } from '../store/toastStore';
 import useBudget from '../hooks/useBudget';
 
 const PIE_COLORS = [chartColors.sage, chartColors.amber, chartColors.rose, chartColors.slate, chartColors.cream,
@@ -25,7 +25,6 @@ export default function Budget() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-
   const monthStr = `${year}-${String(month).padStart(2, '0')}`;
   const { transactions, targets, monthlyTotals, loading, error, create, remove } = useBudget(monthStr);
 
@@ -102,8 +101,17 @@ export default function Budget() {
     try {
       await create({ date: newTxn.date || new Date().toISOString().split('T')[0], amount: parseFloat(newTxn.amount), category: newTxn.category, type: newTxn.type, description: newTxn.description });
       setNewTxn({ date: '', amount: '', category: '', type: 'expense', description: '' });
-    } catch (e) { alert(e.message); }
-    finally { setSaving(false); }
+      toast.success('Transaction added!');
+    } catch (e) {
+      toast.error('Failed to add transaction');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    try { await remove(id); toast.success('Transaction deleted'); }
+    catch (e) { toast.error('Failed to delete transaction'); }
   };
 
   const toggleSort = (field) => {
@@ -111,7 +119,12 @@ export default function Budget() {
     else { setSortBy(field); setSortDir('desc'); }
   };
 
-  if (loading) return <div className="text-text-tertiary py-12 text-center">Loading...</div>;
+  if (loading) return (
+    <div className="space-y-8">
+      <SkeletonStatCards count={4} />
+      <SkeletonTable rows={6} cols={5} />
+    </div>
+  );
   if (error) return <div className="text-accent-rose py-12 text-center">{error}</div>;
 
   return (
@@ -154,7 +167,7 @@ export default function Budget() {
         </div>
         <Card>
           {displayed.length === 0 ? (
-            <p className="text-text-tertiary text-sm py-6 text-center">No transactions this month.</p>
+            <EmptyState icon={DollarSign} message="No transactions this month — add your first one above." />
           ) : (
             <Table>
               <Thead>
@@ -176,7 +189,7 @@ export default function Budget() {
                     </Td>
                     <Td className="font-mono text-text-secondary">{formatCurrency(t.balance)}</Td>
                     <Td>
-                      <button onClick={() => remove(t.id)} className="text-text-tertiary hover:text-accent-rose"><Trash2 className="w-4 h-4" /></button>
+                      <button onClick={() => handleDelete(t.id)} className="text-text-tertiary hover:text-accent-rose"><Trash2 className="w-4 h-4" /></button>
                     </Td>
                   </Tr>
                 ))}
@@ -198,7 +211,6 @@ export default function Budget() {
             </PieChart>
           </ChartWrapper>
         </Card>
-
         <Card header="Income vs Expenses (6 Months)">
           <ChartWrapper height={280}>
             <BarChart data={sixMonthData}>
@@ -212,7 +224,6 @@ export default function Budget() {
             </BarChart>
           </ChartWrapper>
         </Card>
-
         <Card header="Daily Spending vs Target">
           <ChartWrapper height={280}>
             <LineChart data={dailyCumulative}>
@@ -226,7 +237,6 @@ export default function Budget() {
             </LineChart>
           </ChartWrapper>
         </Card>
-
         <Card header={
           <button onClick={() => setShowTargets(!showTargets)} className="flex items-center gap-2 font-display text-lg text-text-primary w-full">
             Budget Targets
@@ -235,7 +245,7 @@ export default function Budget() {
         }>
           {showTargets && (
             targets.length === 0 ? (
-              <p className="text-text-tertiary text-sm py-4 text-center">No budget targets set.</p>
+              <EmptyState message="No budget targets set." />
             ) : (
               <div className="space-y-3">
                 {targets.map(t => {

@@ -1,17 +1,19 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Check, Plus } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
-import { useState } from 'react';
 import Card from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import ProgressBar from '../components/ui/ProgressBar';
 import Modal from '../components/ui/Modal';
+import EmptyState from '../components/ui/EmptyState';
+import { SkeletonCard, SkeletonChart } from '../components/ui/Skeleton';
 import ChartWrapper from '../components/charts/ChartWrapper';
 import { chartColors, commonAxisProps, commonTooltipStyle } from '../components/charts/chartTheme';
 import { generateDatesBack } from '../lib/utils';
 import { useAnimatedNumber } from '../hooks/useAnimatedNumber';
+import { toast } from '../store/toastStore';
 import useHabits from '../hooks/useHabits';
 
 function AnimatedStreak({ value }) {
@@ -42,16 +44,14 @@ function CalendarHeatmap({ habitId, completionDates }) {
 }
 
 export default function Habits() {
-  const { habits, entries, streaks, loading, error, create, toggle } = useHabits(90);
+  const { habits, entries, setEntries, streaks, setStreaks, loading, error, create, toggle } = useHabits(90);
   const [trendView, setTrendView] = useState('combined');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newHabit, setNewHabit] = useState({ name: '', icon: '', target: 'Daily', color: 'sage' });
   const [saving, setSaving] = useState(false);
 
   const days7 = generateDatesBack(7);
-  const today = new Date().toISOString().split('T')[0];
 
-  // Build completionDates per habit from entries
   const completionsByHabit = useMemo(() => {
     const map = {};
     for (const e of entries) {
@@ -84,9 +84,28 @@ export default function Habits() {
     });
   }, [completionsByHabit, habits, trendView]);
 
+  // Optimistic toggle
   const handleToggle = async (habitId, date) => {
-    const done = (completionsByHabit[habitId] || []).includes(date);
-    try { await toggle(habitId, date, !done); } catch (e) { alert(e.message); }
+    const prevEntries = entries;
+    const prevStreaks = streaks;
+    const isDone = (completionsByHabit[habitId] || []).includes(date);
+    const newCompleted = !isDone;
+
+    // Optimistic update
+    setEntries(prev => {
+      const existing = prev.find(e => e.habit_id === habitId && e.date === date);
+      if (existing) return prev.map(e => e.habit_id === habitId && e.date === date ? { ...e, completed: newCompleted } : e);
+      return [...prev, { habit_id: habitId, date, completed: newCompleted, id: `opt-${Date.now()}` }];
+    });
+
+    try {
+      await toggle(habitId, date, newCompleted);
+      toast.success(newCompleted ? 'Habit logged!' : 'Habit unmarked');
+    } catch (e) {
+      setEntries(prevEntries);
+      setStreaks(prevStreaks);
+      toast.error('Failed to update habit');
+    }
   };
 
   const handleAddHabit = async () => {
@@ -96,19 +115,33 @@ export default function Habits() {
       await create(newHabit);
       setNewHabit({ name: '', icon: '', target: 'Daily', color: 'sage' });
       setShowAddModal(false);
-    } catch (e) { alert(e.message); }
-    finally { setSaving(false); }
+      toast.success('Habit added!');
+    } catch (e) {
+      toast.error('Failed to add habit');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  if (loading) return <div className="text-text-tertiary py-12 text-center">Loading...</div>;
+  if (loading) return (
+    <div className="space-y-8">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        {[1,2,3,4,5,6].map(i => <SkeletonCard key={i} />)}
+      </div>
+      <SkeletonChart height={300} />
+    </div>
+  );
+
   if (error) return <div className="text-accent-rose py-12 text-center">{error}</div>;
 
   if (habits.length === 0) return (
     <div className="space-y-8 stagger-fade">
-      <div className="text-center py-16 text-text-tertiary">
-        <p className="mb-4">No habits yet. Start tracking your first habit.</p>
-        <Button onClick={() => setShowAddModal(true)}><Plus className="w-4 h-4" /> Add Habit</Button>
-      </div>
+      <EmptyState
+        icon={Check}
+        message="No habits yet — start building your daily routines."
+        action="Add First Habit"
+        onAction={() => setShowAddModal(true)}
+      />
       <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="New Habit">
         <div className="space-y-4">
           <Input label="Name" value={newHabit.name} onChange={e => setNewHabit({ ...newHabit, name: e.target.value })} placeholder="e.g. Morning Run" />
@@ -126,7 +159,6 @@ export default function Habits() {
         <Button size="sm" onClick={() => setShowAddModal(true)}><Plus className="w-4 h-4" /> Add Habit</Button>
       </div>
 
-      {/* Active Streaks */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {habits.map(h => (
           <Card key={h.id} className="text-center">
@@ -138,7 +170,6 @@ export default function Habits() {
         ))}
       </div>
 
-      {/* Calendar Heatmaps */}
       <section>
         <h2 className="font-display text-xl mb-4">90-Day Heatmaps</h2>
         <div className="space-y-4">
@@ -155,7 +186,6 @@ export default function Habits() {
         </div>
       </section>
 
-      {/* Weekly Scorecard */}
       <Card header="Weekly Scorecard">
         <div className="space-y-3">
           <div className="flex items-center gap-2">
@@ -167,7 +197,6 @@ export default function Habits() {
             ))}
             <div className="w-16 text-right text-xs text-text-tertiary">Score</div>
           </div>
-
           {habits.map(h => {
             const count = days7.filter(d => (completionsByHabit[h.id] || []).includes(d)).length;
             return (
@@ -176,11 +205,8 @@ export default function Habits() {
                 {days7.map(d => {
                   const done = (completionsByHabit[h.id] || []).includes(d);
                   return (
-                    <button
-                      key={d}
-                      onClick={() => handleToggle(h.id, d)}
-                      className={`w-10 h-8 flex items-center justify-center border transition-colors ${done ? 'bg-accent-sage/20 border-accent-sage/40' : 'bg-bg-input border-border hover:border-border-hover'}`}
-                    >
+                    <button key={d} onClick={() => handleToggle(h.id, d)}
+                      className={`w-10 h-8 flex items-center justify-center border transition-colors ${done ? 'bg-accent-sage/20 border-accent-sage/40' : 'bg-bg-input border-border hover:border-border-hover'}`}>
                       {done && <Check className="w-3.5 h-3.5 text-accent-sage" />}
                     </button>
                   );
@@ -189,7 +215,6 @@ export default function Habits() {
               </div>
             );
           })}
-
           <div className="pt-3 border-t border-border flex items-center justify-between">
             <span className="text-sm text-text-secondary">This week</span>
             <span className="font-mono text-accent-cream">{weeklyPct}%</span>
@@ -198,7 +223,6 @@ export default function Habits() {
         </div>
       </Card>
 
-      {/* Trends */}
       <Card header={
         <div className="flex items-center justify-between">
           <span className="font-display text-lg text-text-primary">Trends</span>
