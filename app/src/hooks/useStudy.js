@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useAuthStore } from '../store/authStore'
 import * as svc from '../services/studyService'
 
-export default function useStudy(date = null) {
+export default function useStudy() {
   const userId = useAuthStore(s => s.user?.id)
   const [data, setData] = useState([])
   const [streaks, setStreaks] = useState({})
@@ -14,7 +14,7 @@ export default function useStudy(date = null) {
     setLoading(true)
     try {
       const [entries, streakData] = await Promise.all([
-        svc.getStudyEntries(userId, date),
+        svc.getStudyEntries(userId),
         svc.getStudyStreaks(userId),
       ])
       setData(entries)
@@ -25,12 +25,11 @@ export default function useStudy(date = null) {
     } finally {
       setLoading(false)
     }
-  }, [userId, date])
+  }, [userId])
 
   useEffect(() => { fetch() }, [fetch])
 
   const upsertEntry = async (d) => { await svc.upsertStudyEntry({ ...d, user_id: userId }); await fetch() }
-  const upsertLog = async (d) => { await svc.upsertStudyLog(d); await fetch() }
 
-  return { data, setData, streaks, loading, error, upsertEntry, upsertLog, refetch: fetch }
+  return { data, setData, streaks, loading, error, upsertEntry, refetch: fetch }
 }

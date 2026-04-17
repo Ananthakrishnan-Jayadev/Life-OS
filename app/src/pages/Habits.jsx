@@ -47,7 +47,7 @@ export default function Habits() {
   const { habits, entries, setEntries, streaks, setStreaks, loading, error, create, toggle } = useHabits(90);
   const [trendView, setTrendView] = useState('combined');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newHabit, setNewHabit] = useState({ name: '', icon: '', target: 'Daily', color: 'sage' });
+  const [newHabit, setNewHabit] = useState({ name: '', icon: '' });
   const [saving, setSaving] = useState(false);
 
   const days7 = generateDatesBack(7);
@@ -113,7 +113,7 @@ export default function Habits() {
     setSaving(true);
     try {
       await create(newHabit);
-      setNewHabit({ name: '', icon: '', target: 'Daily', color: 'sage' });
+      setNewHabit({ name: '', icon: '' });
       setShowAddModal(false);
       toast.success('Habit added!');
     } catch (e) {
@@ -146,7 +146,6 @@ export default function Habits() {
         <div className="space-y-4">
           <Input label="Name" value={newHabit.name} onChange={e => setNewHabit({ ...newHabit, name: e.target.value })} placeholder="e.g. Morning Run" />
           <Input label="Icon (emoji)" value={newHabit.icon} onChange={e => setNewHabit({ ...newHabit, icon: e.target.value })} placeholder="🏃" />
-          <Input label="Target" value={newHabit.target} onChange={e => setNewHabit({ ...newHabit, target: e.target.value })} placeholder="Daily" />
           <Button onClick={handleAddHabit} disabled={saving}>{saving ? 'Adding...' : 'Add Habit'}</Button>
         </div>
       </Modal>
@@ -256,7 +255,6 @@ export default function Habits() {
         <div className="space-y-4">
           <Input label="Name" value={newHabit.name} onChange={e => setNewHabit({ ...newHabit, name: e.target.value })} placeholder="e.g. Morning Run" />
           <Input label="Icon (emoji)" value={newHabit.icon} onChange={e => setNewHabit({ ...newHabit, icon: e.target.value })} placeholder="🏃" />
-          <Input label="Target" value={newHabit.target} onChange={e => setNewHabit({ ...newHabit, target: e.target.value })} placeholder="Daily" />
           <Button onClick={handleAddHabit} disabled={saving}>{saving ? 'Adding...' : 'Add Habit'}</Button>
         </div>
       </Modal>

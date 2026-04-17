@@ -10,10 +10,10 @@ export async function getApplications(userId) {
   return data
 }
 
-export async function createApplication(data) {
+export async function createApplication({ title, salary, ...rest }) {
   const { data: created, error } = await supabase
     .from('job_applications')
-    .insert(data)
+    .insert({ ...rest, job_title: title })
     .select()
     .single()
   if (error) throw new Error(`Failed to create application: ${error.message}`)

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { Plus, ChevronDown, ChevronRight, Trash2, Dumbbell } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import Card from '../components/ui/Card';
@@ -66,9 +66,9 @@ export default function Workout() {
         const dbEx = exercises.find(e => e.name === ex.name);
         if (!dbEx) continue;
         const wkEx = await addWkExercise({ workout_id: workout.id, exercise_id: dbEx.id });
-        for (const s of ex.sets) {
+        for (const [setIdx, s] of ex.sets.entries()) {
           if (!s.reps && !s.weight) continue;
-          await addSet({ workout_exercise_id: wkEx.id, reps: parseInt(s.reps) || 0, weight: parseFloat(s.weight) || 0 });
+          await addSet({ workout_exercise_id: wkEx.id, set_number: setIdx + 1, reps: parseInt(s.reps) || 0, weight: parseFloat(s.weight) || 0 });
         }
       }
       setLogExercises([]);
@@ -193,8 +193,8 @@ export default function Workout() {
                   const allSets = (w.workout_exercises || []).flatMap(we => we.sets || []);
                   const volume = allSets.reduce((s, set) => s + (set.weight || 0) * (set.reps || 0), 0);
                   return (
-                    <>
-                      <Tr key={w.id} onClick={() => setExpandedWorkout(expandedWorkout === w.id ? null : w.id)}>
+                    <Fragment key={w.id}>
+                      <Tr onClick={() => setExpandedWorkout(expandedWorkout === w.id ? null : w.id)}>
                         <Td className="font-mono text-sm">{formatShortDate(w.date)}</Td>
                         <Td><Badge color="slate">{w.body_part}</Badge></Td>
                         <Td className="text-text-secondary">{(w.workout_exercises || []).map(e => e.exercise?.name).join(', ')}</Td>
@@ -218,7 +218,7 @@ export default function Workout() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </Tbody>

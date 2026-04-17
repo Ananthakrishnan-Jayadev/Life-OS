@@ -60,7 +60,7 @@ export default function useHabits(days = 30) {
 
   const create = async (d) => { await svc.createHabit({ ...d, user_id: userId }); await fetch() }
   const toggle = async (habitId, date, completed = true) => {
-    await svc.upsertHabitEntry({ habit_id: habitId, date, completed })
+    await svc.upsertHabitEntry({ habit_id: habitId, user_id: userId, date, completed })
     // Realtime will handle entry update; refresh streaks
     svc.getStreaks(userId).then(setStreaks).catch(() => {})
   }

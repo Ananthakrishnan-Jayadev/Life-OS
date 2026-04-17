@@ -9,7 +9,7 @@ import { formatCurrency } from '../lib/utils';
 import { useAnimatedNumber } from '../hooks/useAnimatedNumber';
 import useDashboard from '../hooks/useDashboard';
 import useInbox from '../hooks/useInbox';
-import { upsertStudyEntry, upsertStudyLog } from '../services/studyService';
+import { upsertStudyEntry } from '../services/studyService';
 import { useAuthStore } from '../store/authStore';
 import { toast } from '../store/toastStore';
 import { SkeletonCard } from '../components/ui/Skeleton';
@@ -49,12 +49,10 @@ export default function Home() {
   const [captureText, setCaptureText] = useState('');
   const [toggling, setToggling] = useState(null);
 
-  // Normalize today's study entries to {trackId: {completed}}
+  // Flat rows: each entry is {track, completed, ...}
   const todayTrackMap = {};
   for (const entry of todayStudy) {
-    for (const log of entry.study_logs || []) {
-      todayTrackMap[log.track_id] = { completed: log.completed, entryId: entry.id };
-    }
+    todayTrackMap[entry.track] = { completed: entry.completed, id: entry.id };
   }
 
   const handleCapture = async () => {
@@ -70,13 +68,8 @@ export default function Home() {
     setToggling(trackId);
     const today = new Date().toISOString().split('T')[0];
     try {
-      let entryId = todayStudy[0]?.id;
-      if (!entryId) {
-        const entry = await upsertStudyEntry({ user_id: userId, date: today });
-        entryId = entry.id;
-      }
       const current = todayTrackMap[trackId]?.completed || false;
-      await upsertStudyLog({ study_entry_id: entryId, track_id: trackId, completed: !current });
+      await upsertStudyEntry({ user_id: userId, date: today, track: trackId, completed: !current });
       toast.success(current ? 'Track unchecked' : 'Track completed!');
     } catch (e) { toast.error('Failed to update track'); }
     finally { setToggling(null); }
@@ -188,7 +181,7 @@ export default function Home() {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-text-secondary">BF%</span>
-              <span className="font-mono text-text-primary">{latestMeasurement.bf ?? '—'}%</span>
+              <span className="font-mono text-text-primary">{latestMeasurement.body_fat_navy ?? latestMeasurement.body_fat_manual ?? '—'}%</span>
             </div>
           </div>
         ) : (

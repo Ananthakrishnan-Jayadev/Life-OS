@@ -153,7 +153,7 @@ export default function JobTracker() {
                 {sorted.map(job => (
                   <Tr key={job.id}>
                     <Td className="font-medium">{job.company}</Td>
-                    <Td className="text-text-secondary">{job.title}</Td>
+                    <Td className="text-text-secondary">{job.job_title}</Td>
                     <Td className="font-mono text-sm">{formatShortDate(job.date_applied)}</Td>
                     <Td>
                       <Select options={statuses.map(s => ({ value: s, label: s }))} value={job.status} onChange={e => handleStatusChange(job.id, e.target.value)} />
@@ -188,7 +188,7 @@ export default function JobTracker() {
                     {statusJobs.map(job => (
                       <div key={job.id} className="bg-bg-secondary border border-border p-3 hover:bg-bg-tertiary transition-colors">
                         <p className="font-medium text-sm text-text-primary">{job.company}</p>
-                        <p className="text-xs text-text-secondary mt-0.5">{job.title}</p>
+                        <p className="text-xs text-text-secondary mt-0.5">{job.job_title}</p>
                         <p className="text-[10px] font-mono text-text-tertiary mt-2">{formatShortDate(job.date_applied)}</p>
                       </div>
                     ))}

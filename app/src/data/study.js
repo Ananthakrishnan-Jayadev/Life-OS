@@ -1,10 +1,10 @@
 import { generateDatesBack } from '../lib/utils';
 
 export const tracks = [
-  { id: 'french', name: 'French', icon: '🇫🇷', color: 'amber' },
-  { id: 'leetcode', name: 'LeetCode', icon: '💻', color: 'sage' },
-  { id: 'cloud', name: 'Cloud', icon: '☁️', color: 'slate' },
-  { id: 'techstack', name: 'Tech Stack', icon: '🔧', color: 'cream' },
+  { id: 'French', name: 'French', icon: '🇫🇷', color: 'amber' },
+  { id: 'LeetCode', name: 'LeetCode', icon: '💻', color: 'sage' },
+  { id: 'Cloud', name: 'Cloud', icon: '☁️', color: 'slate' },
+  { id: 'TechStack', name: 'Tech Stack', icon: '🔧', color: 'cream' },
 ];
 
 const days = generateDatesBack(30);

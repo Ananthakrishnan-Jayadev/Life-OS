@@ -12,12 +12,11 @@ import { tracks } from '../data/study';
 import { formatShortDate } from '../lib/utils';
 import { toast } from '../store/toastStore';
 import useStudy from '../hooks/useStudy';
-import { upsertStudyEntry, upsertStudyLog } from '../services/studyService';
 import { useAuthStore } from '../store/authStore';
 
 export default function StudyChecklist() {
   const userId = useAuthStore(s => s.user?.id);
-  const { data: studyEntries, setData, streaks, loading, refetch } = useStudy();
+  const { data: studyEntries, setData, streaks, loading, upsertEntry, refetch } = useStudy();
   const [dateOffset, setDateOffset] = useState(0);
   const [expandedTrack, setExpandedTrack] = useState(null);
   const [expandedHistory, setExpandedHistory] = useState(null);
@@ -28,14 +27,11 @@ export default function StudyChecklist() {
   currentDate.setDate(currentDate.getDate() - dateOffset);
   const dateKey = currentDate.toISOString().split('T')[0];
 
-  // Normalize to {date: {id, tracks: {trackId: {completed}}}}
+  // Build {date: {tracks: {trackId: {completed, id}}}} from flat rows
   const entryMap = {};
   for (const entry of studyEntries) {
-    const trackMap = {};
-    for (const log of entry.study_logs || []) {
-      trackMap[log.track_id] = { completed: log.completed, log: log.log_data };
-    }
-    entryMap[entry.date] = { id: entry.id, tracks: trackMap };
+    if (!entryMap[entry.date]) entryMap[entry.date] = { tracks: {} };
+    entryMap[entry.date].tracks[entry.track] = { completed: entry.completed, id: entry.id };
   }
 
   const dayEntry = entryMap[dateKey];
@@ -78,12 +74,7 @@ export default function StudyChecklist() {
     });
 
     try {
-      let entryId = dayEntry?.id;
-      if (!entryId) {
-        const entry = await upsertStudyEntry({ user_id: userId, date: dateKey });
-        entryId = entry.id;
-      }
-      await upsertStudyLog({ study_entry_id: entryId, track_id: trackId, completed: newDone });
+      await upsertEntry({ date: dateKey, track: trackId, completed: newDone });
       await refetch();
       toast.success(newDone ? 'Track completed!' : 'Track unchecked');
     } catch (e) {
@@ -213,16 +204,16 @@ export default function StudyChecklist() {
             <EmptyState icon={BookOpen} message="No study entries yet — start checking off tracks above." />
           ) : (
             <div className="space-y-2 max-h-[400px] overflow-y-auto">
-              {[...studyEntries].slice(0, 20).map(entry => {
-                const completedTracks = tracks.filter(t => entryMap[entry.date]?.tracks[t.id]?.completed);
-                const isExpanded = expandedHistory === entry.date;
+              {[...new Set(studyEntries.map(e => e.date))].slice(0, 20).map(date => {
+                const completedTracks = tracks.filter(t => entryMap[date]?.tracks[t.id]?.completed);
+                const isExpanded = expandedHistory === date;
                 return (
-                  <div key={entry.date} className="border-b border-border pb-2">
-                    <button onClick={() => setExpandedHistory(isExpanded ? null : entry.date)} className="w-full flex items-center justify-between py-2 hover:bg-bg-tertiary px-2 transition-colors">
-                      <span className="font-mono text-sm text-text-secondary">{formatShortDate(entry.date)}</span>
+                  <div key={date} className="border-b border-border pb-2">
+                    <button onClick={() => setExpandedHistory(isExpanded ? null : date)} className="w-full flex items-center justify-between py-2 hover:bg-bg-tertiary px-2 transition-colors">
+                      <span className="font-mono text-sm text-text-secondary">{formatShortDate(date)}</span>
                       <div className="flex gap-1">
                         {tracks.map(t => (
-                          <div key={t.id} className={`w-3 h-3 ${entryMap[entry.date]?.tracks[t.id]?.completed ? 'bg-accent-sage' : 'bg-bg-input'}`} />
+                          <div key={t.id} className={`w-3 h-3 ${entryMap[date]?.tracks[t.id]?.completed ? 'bg-accent-sage' : 'bg-bg-input'}`} />
                         ))}
                       </div>
                       <span className="text-xs text-text-tertiary">{completedTracks.length}/{tracks.length}</span>
@@ -231,8 +222,8 @@ export default function StudyChecklist() {
                       <div className="px-2 py-2 bg-bg-tertiary space-y-2 text-sm">
                         {tracks.map(t => (
                           <div key={t.id}>
-                            <span className={entryMap[entry.date]?.tracks[t.id]?.completed ? 'text-accent-sage' : 'text-text-tertiary'}>
-                              {t.icon} {t.name}: {entryMap[entry.date]?.tracks[t.id]?.completed ? '✓' : '✗'}
+                            <span className={entryMap[date]?.tracks[t.id]?.completed ? 'text-accent-sage' : 'text-text-tertiary'}>
+                              {t.icon} {t.name}: {entryMap[date]?.tracks[t.id]?.completed ? '✓' : '✗'}
                             </span>
                           </div>
                         ))}

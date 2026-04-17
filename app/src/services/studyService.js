@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 export async function getStudyEntries(userId, date = null) {
   let query = supabase
     .from('study_entries')
-    .select('*, study_logs(*)')
+    .select('*')
     .eq('user_id', userId)
     .order('date', { ascending: false })
   if (date) query = query.eq('date', date)
@@ -15,41 +15,30 @@ export async function getStudyEntries(userId, date = null) {
 export async function upsertStudyEntry(data) {
   const { data: upserted, error } = await supabase
     .from('study_entries')
-    .upsert(data, { onConflict: 'user_id,date' })
+    .upsert(data, { onConflict: 'user_id,date,track' })
     .select()
     .single()
   if (error) throw new Error(`Failed to upsert study entry: ${error.message}`)
   return upserted
 }
 
-export async function upsertStudyLog(data) {
-  const { data: upserted, error } = await supabase
-    .from('study_logs')
-    .upsert(data, { onConflict: 'study_entry_id,track_id' })
-    .select()
-    .single()
-  if (error) throw new Error(`Failed to upsert study log: ${error.message}`)
-  return upserted
-}
-
 export async function getStudyStreaks(userId) {
   const { data, error } = await supabase
-    .from('study_logs')
-    .select('track_id, completed, study_entry:study_entries!inner(date, user_id)')
-    .eq('study_entry.user_id', userId)
+    .from('study_entries')
+    .select('track, date, completed')
+    .eq('user_id', userId)
     .eq('completed', true)
-    .order('study_entry(date)', { ascending: false })
+    .order('date', { ascending: false })
   if (error) throw new Error(`Failed to fetch study streaks: ${error.message}`)
 
-  const streaks = {}
   const byTrack = {}
   for (const row of data) {
-    const tid = row.track_id
-    if (!byTrack[tid]) byTrack[tid] = []
-    byTrack[tid].push(row.study_entry.date)
+    if (!byTrack[row.track]) byTrack[row.track] = []
+    byTrack[row.track].push(row.date)
   }
 
-  for (const [tid, dates] of Object.entries(byTrack)) {
+  const streaks = {}
+  for (const [track, dates] of Object.entries(byTrack)) {
     const sorted = [...new Set(dates)].sort().reverse()
     let streak = 0
     let expected = new Date().toISOString().split('T')[0]
@@ -61,7 +50,7 @@ export async function getStudyStreaks(userId) {
         expected = prev.toISOString().split('T')[0]
       } else break
     }
-    streaks[tid] = streak
+    streaks[track] = streak
   }
   return streaks
 }
